@@ -453,12 +453,20 @@ export default function Home() {
 	// Add state for wallet (on-hand cash) and bank balance
 	const [wallet, setWallet] = useState(STARTING_CASH);
 	const [bank, setBank] = useState(0);
+	// Add state for modal
+	const [modal, setModal] = useState<{ title: string; message: string } | null>(null);
+	// Win/loss modal state
+	const [gameOver, setGameOver] = useState<{ win: boolean; reason: string } | null>(null);
+	// Add reputation and score state
+	const [reputation, setReputation] = useState(0);
+	const [score, setScore] = useState(0);
 
 	function handleCyberChoice(choice: 'fight' | 'pay' | 'ignore') {
 		if (!pendingCyber) return;
 		const roll = pendingCyber.defenseRoll;
 		if (choice === 'fight') {
 			if (roll < 0.2) {
+				setReputation(r => r + 1);
 				setEventMsg("You fended off a major cyberattack! Your reputation in the tech world grows.");
 			} else if (roll < 0.5) {
 				const loss = Math.round(cash * (0.1 + Math.random() * 0.15) * (security ? 0.5 : 1));
@@ -624,23 +632,47 @@ export default function Home() {
 					{/* Money indicators as a box, aligned with inventory/cloud storage */}
 					<div className="w-full max-w-xs bg-gray-900/80 rounded-lg p-3 shadow flex flex-col gap-2 items-center justify-center">
 						<h4 className="font-semibold mb-1">Finances</h4>
-						<div className="flex flex-col gap-1 w-full">
-							<div className="flex items-center gap-2 justify-between w-full">
+						<div className="flex flex-row gap-4 w-full justify-center items-end">
+							{/* Wallet */}
+							<div className="flex flex-col items-center w-1/5">
 								<span className="text-lg">💵</span>
-								<span className="font-bold">${wallet.toLocaleString()}</span>
-								<span className="text-xs text-gray-400 ml-1">Wallet</span>
+								<span className="font-bold text-lg">${wallet.toLocaleString()}</span>
+								<span className="text-xs text-gray-400">Wallet</span>
 							</div>
-							<div className="flex items-center gap-2 justify-between w-full">
+							{/* Bank */}
+							<div className="flex flex-col items-center w-1/5">
 								<span className="text-lg">🏦</span>
-								<span className="font-bold">${bank.toLocaleString()}</span>
-								<span className="text-xs text-gray-400 ml-1">Bank</span>
+								<span className="font-bold text-lg">${bank.toLocaleString()}</span>
+								<span className="text-xs text-gray-400">Bank</span>
 							</div>
-							<div className="flex items-center gap-2 justify-between w-full">
+							{/* Debt */}
+							<div className="flex flex-col items-center w-1/5">
 								<span className="text-lg">💳</span>
-								<span className="font-bold">${debt.toLocaleString()}</span>
-								<span className="text-xs text-gray-400 ml-1">Debt</span>
+								<span className="font-bold text-lg">${debt.toLocaleString()}</span>
+								<span className="text-xs text-gray-400">Debt</span>
+							</div>
+							{/* Reputation */}
+							<div className="flex flex-col items-center w-1/5">
+								<span className="text-lg">⭐</span>
+								<span className="font-bold text-lg">{reputation}</span>
+								<span className="text-xs text-gray-400">Reputation</span>
+							</div>
+							{/* Tycoon Index */}
+							<div className="flex flex-col items-center w-1/5">
+								<span className="text-lg">📈</span>
+								<span className="font-bold text-lg">{Math.round(score).toLocaleString()}</span>
+								<span className="text-xs text-gray-400">Tycoon Index</span>
 							</div>
 						</div>
+						{/* Retire button if $1B+ */}
+						{(wallet + bank) >= 1_000_000_000 && !gameOver && (
+							<button
+								className="mt-4 px-6 py-2 rounded bg-green-700 hover:bg-green-800 text-lg font-semibold"
+								onClick={() => setGameOver({ win: true, reason: `You retired as a billionaire! Final Tycoon Index: ${Math.round(score).toLocaleString()}` })}
+							>
+								Retire
+							</button>
+						)}
 					</div>
 				</div>
 			</header>
@@ -745,15 +777,15 @@ export default function Home() {
 						</button>
 					</div>
 				</div>
+				{eventMsg && !showTrade && (
+					<div className="w-full max-w-2xl bg-yellow-900/80 text-yellow-200 rounded-lg p-4 shadow text-center font-semibold animate-pulse mb-4">
+						{eventMsg}
+					</div>
+				)}
 				{showTrade && (
 					<div className="w-full bg-gray-800 rounded-lg p-4 shadow flex flex-col gap-4">
 						<h3 className="text-lg font-bold mb-2">Market</h3>
 						{/* Alerts above trading table */}
-						{eventMsg && (
-							<div className="w-full bg-yellow-900/80 text-yellow-200 rounded-lg p-4 shadow text-center font-semibold animate-pulse mb-4">
-								{eventMsg}
-							</div>
-						)}
 						{pendingCyber && (
 							<div className="w-full bg-red-900/90 text-red-100 rounded-lg p-6 shadow text-center font-semibold flex flex-col gap-4 animate-pulse mb-4">
 								<p>Cyberattack! Hackers are trying to breach your systems.<br/>What will you do?</p>
@@ -762,6 +794,11 @@ export default function Home() {
 									<button className="px-4 py-2 rounded bg-yellow-600 hover:bg-yellow-700 text-black font-bold" onClick={() => handleCyberChoice('pay')}>Pay Ransom</button>
 									<button className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-800" onClick={() => handleCyberChoice('ignore')}>Ignore</button>
 								</div>
+							</div>
+						)}
+						{eventMsg && showTrade && !eventMsg.startsWith('Arrived in') && (
+							<div className="w-full bg-yellow-900/80 text-yellow-200 rounded-lg p-4 shadow text-center font-semibold animate-pulse mb-4">
+								{eventMsg}
 							</div>
 						)}
 						<table className="w-full text-sm mb-2">
@@ -800,12 +837,18 @@ export default function Home() {
 											<td className="text-center">
 												<button
 													className="px-2 py-1 bg-blue-700 hover:bg-blue-800 rounded text-xs"
-													disabled={wallet < prices[g.name] * (tradeQty[g.name] || 1) || (inventory[g.name] || 0) + (tradeQty[g.name] || 1) > maxInventory || totalInventory + (tradeQty[g.name] || 1) > maxInventory * GOODS.length}
+													// Do not disable for wallet/inventory errors; handle all in onClick
 													onClick={() => {
 														const qty = tradeQty[g.name] || 1;
 														const total = prices[g.name] * qty;
 														const totalInventory = Object.values(inventory).reduce((a, b) => a + b, 0);
-														if (wallet >= total && (inventory[g.name] || 0) + qty <= maxInventory && totalInventory + qty <= maxInventory * GOODS.length) {
+														if (wallet < total) {
+															setModal({ title: "Insufficient Funds", message: `You don't have enough money to buy ${qty} ${g.name}.` });
+														} else if ((inventory[g.name] || 0) + qty > maxInventory) {
+															setModal({ title: "Inventory Full", message: `You can't hold more than ${maxInventory} of ${g.name}.` });
+														} else if (totalInventory + qty > maxInventory * GOODS.length) {
+															setModal({ title: "Total Inventory Full", message: `Your total inventory is full. Sell or store items to make space.` });
+														} else {
 															setWallet(wallet - total);
 															setInventory(inv => ({ ...inv, [g.name]: (inv[g.name] || 0) + qty }));
 														}
@@ -910,8 +953,12 @@ export default function Home() {
 												setWallet(wallet - (10000 + c.name.length * 1000));
 												setCity(c.name);
 												setShowTravel(false);
-												setEventMsg(`Arrived in ${c.name}!`);
-												setTimeout(() => setEventMsg(null), 3000);
+												setShowTrade(false); // Ensure market is closed so travel alert is visible
+												setEventMsg(null); // Clear any previous event
+												setTimeout(() => {
+													setEventMsg(`Arrived in ${c.name}!`);
+													setTimeout(() => setEventMsg(null), 3000);
+												}, 100);
 												setTurn((t) => t + 1);
 												// Compound debt and bank interest
 												setDebt(d => Math.round(d * 1.2));
@@ -929,20 +976,35 @@ export default function Home() {
 												// Random event (30% chance)
 												if (Math.random() < 0.3) {
 													const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-													if (event.text.startsWith("Cyberattack!")) {
-														setPendingCyber({ defenseRoll: Math.random() });
-														return;
+													if (event.type === "Economic") {
+														// Economic events: apply to all players
+														setPrices((prev) => {
+															const newPrices = { ...prev };
+															if (event.effect) event.effect({ prices: newPrices });
+															return newPrices;
+														});
+													} else if (event.type === "Tech") {
+														// Tech events: apply based on city or randomly
+														if (city === "San Francisco" || Math.random() < 0.5) {
+															setEventMsg(event.text);
+															setTimeout(() => setEventMsg(null), 5000);
+														}
+													} else if (event.type === "Personal") {
+														// Personal events: apply to the player
+														setEventMsg(event.text);
+														const effect = event.effect;
+														if (effect) {
+															effect({
+																cash,
+																inventory,
+																prices,
+																setCash,
+																setInventory,
+																setPrices,
+															});
+														}
+														setTimeout(() => setEventMsg(null), 5000);
 													}
-													setEventMsg(event.text);
-													setTimeout(() => setEventMsg(null), 5000);
-													setCash((c) => {
-														const state = { cash: c, prices, inventory };
-														const result = event.effect(state);
-														if (result.prices) setPrices(result.prices);
-														if (result.inventory) setInventory(result.inventory);
-														if (result.eventMsg) setEventMsg(result.eventMsg);
-														return result.cash ?? c;
-													});
 												}
 											}}
 										>
@@ -956,6 +1018,25 @@ export default function Home() {
 					</div>
 				)}
 			</main>
+			{/* Modal component moved here so it always renders above everything */}
+			{modal && (
+			  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+				<div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center">
+				  <h3 className="text-lg font-bold mb-2">{modal.title}</h3>
+				  <p className="mb-4 text-center">{modal.message}</p>
+				  <button className="px-4 py-2 rounded bg-blue-700 hover:bg-blue-800" onClick={() => setModal(null)}>OK</button>
+				</div>
+			  </div>
+			)}
+			{gameOver && (
+  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+    <div className="bg-gray-900 rounded-lg p-8 shadow-lg w-full max-w-md flex flex-col items-center">
+      <h2 className={`text-2xl font-bold mb-4 ${gameOver.win ? 'text-green-300' : 'text-red-300'}`}>{gameOver.win ? 'You Win!' : 'Game Over'}</h2>
+      <p className="mb-6 text-center text-lg">{gameOver.reason}</p>
+      <button className="px-6 py-2 rounded bg-blue-700 hover:bg-blue-800 text-lg font-semibold" onClick={() => window.location.reload()}>Restart</button>
+    </div>
+  </div>
+)}
 		</div>
 	);
 }
