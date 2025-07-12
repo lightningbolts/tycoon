@@ -470,6 +470,11 @@ export default function Home() {
 	const [showCloudModal, setShowCloudModal] = useState(false);
 	const [cloudTransferQty, setCloudTransferQty] = useState<{ [good: string]: number }>({});
 	const [cloudError, setCloudError] = useState<string | null>(null);
+	// VC Borrow modal state
+	const [showVCModal, setShowVCModal] = useState(false);
+	const [vcAmount, setVcAmount] = useState('');
+	const [vcError, setVcError] = useState<string | null>(null);
+	const [vcBorrowedTurn, setVcBorrowedTurn] = useState<number | null>(null);
 
 	function handleCyberChoice(choice: 'fight' | 'pay' | 'ignore') {
 		if (!pendingCyber) return;
@@ -695,11 +700,21 @@ export default function Home() {
 							<button
 								className="px-4 py-2 rounded bg-yellow-700 hover:bg-yellow-800 text-white font-semibold"
 								onClick={() => {
-									// VC Borrow: +$50,000, +$60,000 debt
-									setCash(cash + 50000);
-									setDebt(debt + 60000);
-									setEventMsg("You took a VC loan: +$50,000 cash, +$60,000 debt (with interest!)");
-									setTimeout(() => setEventMsg(null), 4000);
+									if (vcBorrowedTurn === turn) {
+										setEventMsg("You can only borrow once per turn.");
+										setTimeout(() => setEventMsg(null), 3000);
+										return;
+									}
+									setShowVCModal(true);
+									setVcError(null);
+									// Calculate net worth (wallet + bank + inventory + cloud storage)
+									let invValue = 0;
+									GOODS.forEach(g => {
+										invValue += (inventory[g.name] || 0) * prices[g.name];
+										invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+									});
+									const netWorth = wallet + bank + invValue;
+									setVcAmount(netWorth > 0 ? String(netWorth) : '');
 								}}
 							>
 								💸 VC Borrow
@@ -1176,6 +1191,65 @@ export default function Home() {
         )}
       </div>
       <button className="mt-4 px-4 py-2 rounded bg-gray-700 hover:bg-gray-800" onClick={() => setShowCloudModal(false)}>Close</button>
+    </div>
+  </div>
+)}
+			{showVCModal && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center gap-4">
+      <h3 className="text-lg font-bold mb-2">VC Borrow</h3>
+      <div className="text-xs text-gray-400 mb-2">Borrow up to your net worth (once per turn)</div>
+      <input
+        type="number"
+        min={1}
+        placeholder="Amount"
+        className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-white text-center mb-2"
+        value={vcAmount}
+        onChange={e => setVcAmount(e.target.value.replace(/[^0-9]/g, ''))}
+      />
+      {vcError && <div className="text-red-400 text-sm mb-2">{vcError}</div>}
+      <div className="flex gap-2 w-full">
+        <button
+          className="flex-1 px-4 py-2 rounded bg-yellow-700 hover:bg-yellow-800 font-semibold"
+          onClick={() => {
+            const amt = Number(vcAmount);
+            let invValue = 0;
+            GOODS.forEach(g => {
+              invValue += (inventory[g.name] || 0) * prices[g.name];
+              invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+            });
+            const netWorth = wallet + bank + invValue;
+            if (!amt || amt <= 0) {
+              setVcError('Enter a valid amount.');
+              return;
+            }
+            if (amt > netWorth) {
+              setVcError('Cannot borrow more than your net worth.');
+              return;
+            }
+            setWallet(wallet + amt);
+            setDebt(debt + Math.round(amt * 1.2));
+            setEventMsg(`You borrowed $${amt.toLocaleString()} (debt +$${Math.round(amt*1.2).toLocaleString()})`);
+            setShowVCModal(false);
+            setVcBorrowedTurn(turn);
+            setTimeout(() => setEventMsg(null), 4000);
+          }}
+        >Confirm</button>
+        <button
+          className="flex-1 px-4 py-2 rounded bg-gray-700 hover:bg-gray-800 font-semibold"
+          onClick={() => setShowVCModal(false)}
+        >Cancel</button>
+      </div>
+      <div className="flex flex-col w-full text-xs text-gray-400 mt-2">
+        <span>Net Worth: ${(() => {
+          let invValue = 0;
+          GOODS.forEach(g => {
+            invValue += (inventory[g.name] || 0) * prices[g.name];
+            invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+          });
+          return (wallet + bank + invValue).toLocaleString();
+        })()}</span>
+      </div>
     </div>
   </div>
 )}
