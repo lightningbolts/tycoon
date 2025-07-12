@@ -354,10 +354,10 @@ const UPGRADES = [
 		name: "Medium Cloud Server",
 		cost: 50000,
 		desc: "Increase trading capacity. Unlocks better price negotiation.",
-		benefit: "+10% better sell prices",
+		benefit: "+10% better sell prices, +2000 cloud storage",
 		requires: [],
 		city: null,
-		effect: (state: any) => ({ ...state, infra: "Medium Cloud Server", sellBonus: 0.1 }),
+		effect: (state: any) => ({ ...state, infra: "Medium Cloud Server", sellBonus: 0.1, maxCloudStorage: 2000 }),
 	},
 	{
 		name: "AI Security Suite",
@@ -372,10 +372,10 @@ const UPGRADES = [
 		name: "Big Data Warehouse",
 		cost: 120000,
 		desc: "Store more goods.",
-		benefit: "+2 max inventory per good",
+		benefit: "+2 max inventory per good, +5000 cloud storage",
 		requires: ["Medium Cloud Server"],
 		city: null,
-		effect: (state: any) => ({ ...state, maxInventory: 10 }),
+		effect: (state: any) => ({ ...state, maxInventory: 10, maxCloudStorage: 5000 }),
 	},
 	{
 		name: "Global Analytics Platform",
@@ -460,6 +460,16 @@ export default function Home() {
 	// Add reputation and score state
 	const [reputation, setReputation] = useState(0);
 	const [score, setScore] = useState(0);
+	// Bank modal state
+	const [showBankModal, setShowBankModal] = useState(false);
+	const [bankAction, setBankAction] = useState<'deposit' | 'withdraw'>('deposit');
+	const [bankAmount, setBankAmount] = useState('');
+	const [bankError, setBankError] = useState<string | null>(null);
+	const [maxCloudStorage, setMaxCloudStorage] = useState(1000);
+	// Cloud storage modal state
+	const [showCloudModal, setShowCloudModal] = useState(false);
+	const [cloudTransferQty, setCloudTransferQty] = useState<{ [good: string]: number }>({});
+	const [cloudError, setCloudError] = useState<string | null>(null);
 
 	function handleCyberChoice(choice: 'fight' | 'pay' | 'ignore') {
 		if (!pendingCyber) return;
@@ -616,7 +626,7 @@ export default function Home() {
 						)}
 					</div>
 					<div className="w-full max-w-xs bg-gray-900/80 rounded-lg p-3 shadow flex flex-col gap-1">
-						<h4 className="font-semibold mb-1">Cloud Storage</h4>
+						<h4 className="font-semibold mb-1">Cloud Storage <span className="text-xs text-gray-400">({Object.values(cloudStorage).reduce((a, b) => a + b, 0)}/{maxCloudStorage})</span></h4>
 						{Object.keys(cloudStorage).length === 0 ? (
 							<span className="text-gray-400">No goods stored.</span>
 						) : (
@@ -632,36 +642,36 @@ export default function Home() {
 					{/* Money indicators as a box, aligned with inventory/cloud storage */}
 					<div className="w-full max-w-xs bg-gray-900/80 rounded-lg p-3 shadow flex flex-col gap-2 items-center justify-center">
 						<h4 className="font-semibold mb-1">Finances</h4>
-						<div className="flex flex-row gap-4 w-full justify-center items-end">
+						<div className="flex flex-col gap-2 w-full">
 							{/* Wallet */}
-							<div className="flex flex-col items-center w-1/5">
+							<div className="flex items-center gap-2 w-full">
 								<span className="text-lg">💵</span>
 								<span className="font-bold text-lg">${wallet.toLocaleString()}</span>
-								<span className="text-xs text-gray-400">Wallet</span>
+								<span className="text-xs text-gray-400 ml-auto">Wallet</span>
 							</div>
 							{/* Bank */}
-							<div className="flex flex-col items-center w-1/5">
+							<div className="flex items-center gap-2 w-full">
 								<span className="text-lg">🏦</span>
 								<span className="font-bold text-lg">${bank.toLocaleString()}</span>
-								<span className="text-xs text-gray-400">Bank</span>
+								<span className="text-xs text-gray-400 ml-auto">Bank</span>
 							</div>
 							{/* Debt */}
-							<div className="flex flex-col items-center w-1/5">
+							<div className="flex items-center gap-2 w-full">
 								<span className="text-lg">💳</span>
 								<span className="font-bold text-lg">${debt.toLocaleString()}</span>
-								<span className="text-xs text-gray-400">Debt</span>
+								<span className="text-xs text-gray-400 ml-auto">Debt</span>
 							</div>
 							{/* Reputation */}
-							<div className="flex flex-col items-center w-1/5">
+							<div className="flex items-center gap-2 w-full">
 								<span className="text-lg">⭐</span>
 								<span className="font-bold text-lg">{reputation}</span>
-								<span className="text-xs text-gray-400">Reputation</span>
+								<span className="text-xs text-gray-400 ml-auto">Reputation</span>
 							</div>
 							{/* Tycoon Index */}
-							<div className="flex flex-col items-center w-1/5">
+							<div className="flex items-center gap-2 w-full">
 								<span className="text-lg">📈</span>
 								<span className="font-bold text-lg">{Math.round(score).toLocaleString()}</span>
-								<span className="text-xs text-gray-400">Tycoon Index</span>
+								<span className="text-xs text-gray-400 ml-auto">Tycoon Index</span>
 							</div>
 						</div>
 						{/* Retire button if $1B+ */}
@@ -697,30 +707,10 @@ export default function Home() {
 							<button
 								className="px-4 py-2 rounded bg-green-700 hover:bg-green-800 text-white font-semibold"
 								onClick={() => {
-									// Open a modal for deposit/withdraw (simple prompt for now)
-									const action = window.prompt("Type 'deposit' to deposit or 'withdraw' to withdraw from bank:");
-									if (action === 'deposit') {
-										const amt = Number(window.prompt("How much to deposit?"));
-										if (amt > 0 && wallet >= amt) {
-											setWallet(wallet - amt);
-											setBank(bank + amt);
-											setEventMsg(`Deposited $${amt.toLocaleString()} to bank.`);
-										} else {
-											setEventMsg("Invalid amount or not enough cash.");
-										}
-									} else if (action === 'withdraw') {
-										const amt = Number(window.prompt("How much to withdraw?"));
-										if (amt > 0 && bank >= amt) {
-											setBank(bank - amt);
-											setWallet(wallet + amt);
-											setEventMsg(`Withdrew $${amt.toLocaleString()} from bank.`);
-										} else {
-											setEventMsg("Invalid amount or not enough in bank.");
-										}
-									} else {
-										setEventMsg("Cancelled.");
-									}
-									setTimeout(() => setEventMsg(null), 3000);
+									setShowBankModal(true);
+									setBankAction('deposit');
+									setBankAmount('');
+									setBankError(null);
 								}}
 							>
 								🏦 Bank (Deposit/Withdraw)
@@ -728,19 +718,12 @@ export default function Home() {
 							<button
 								className="px-4 py-2 rounded bg-cyan-700 hover:bg-cyan-800 text-white font-semibold"
 								onClick={() => {
-									// Access Cloud Storage: move 1 unit from inventory to cloud storage (if any)
-									const good = Object.keys(inventory).find(g => inventory[g] > 0);
-									if (good) {
-										setInventory(inv => ({ ...inv, [good]: inv[good] - 1 }));
-										setCloudStorage(cs => ({ ...cs, [good]: (cs[good] || 0) + 1 }));
-										setEventMsg(`Moved 1 ${good} to cloud storage.`);
-									} else {
-										setEventMsg("No goods in inventory to store.");
-									}
-									setTimeout(() => setEventMsg(null), 3000);
+									setShowCloudModal(true);
+									setCloudTransferQty({});
+									setCloudError(null);
 								}}
 							>
-								☁️ Access Cloud Storage
+								☁️ Manage Cloud Storage
 							</button>
 							<button
 								className="px-4 py-2 rounded bg-red-700 hover:bg-red-800 text-white font-semibold"
@@ -921,6 +904,7 @@ export default function Home() {
 												if (newState.shenzhenBonus !== undefined) setShenzhenBonus(newState.shenzhenBonus);
 												if (newState.bangaloreBonus !== undefined) setBangaloreBonus(newState.bangaloreBonus);
 												if (newState.ipoReady !== undefined) setIpoReady(newState.ipoReady);
+												if (newState.maxCloudStorage !== undefined) setMaxCloudStorage(newState.maxCloudStorage);
 												setShowUpgrade(false);
 											}}
 										>
@@ -1034,6 +1018,164 @@ export default function Home() {
       <h2 className={`text-2xl font-bold mb-4 ${gameOver.win ? 'text-green-300' : 'text-red-300'}`}>{gameOver.win ? 'You Win!' : 'Game Over'}</h2>
       <p className="mb-6 text-center text-lg">{gameOver.reason}</p>
       <button className="px-6 py-2 rounded bg-blue-700 hover:bg-blue-800 text-lg font-semibold" onClick={() => window.location.reload()}>Restart</button>
+    </div>
+  </div>
+)}
+			{showBankModal && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center gap-4">
+      <h3 className="text-lg font-bold mb-2">Bank: {bankAction === 'deposit' ? 'Deposit' : 'Withdraw'}</h3>
+      <div className="flex gap-2 mb-2">
+        <button
+          className={`px-3 py-1 rounded ${bankAction === 'deposit' ? 'bg-green-700' : 'bg-gray-700'} text-white font-semibold`}
+          onClick={() => { setBankAction('deposit'); setBankError(null); }}
+        >Deposit</button>
+        <button
+          className={`px-3 py-1 rounded ${bankAction === 'withdraw' ? 'bg-green-700' : 'bg-gray-700'} text-white font-semibold`}
+          onClick={() => { setBankAction('withdraw'); setBankError(null); }}
+        >Withdraw</button>
+      </div>
+      <input
+        type="number"
+        min={1}
+        placeholder="Amount"
+        className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-white text-center mb-2"
+        value={bankAmount}
+        onChange={e => setBankAmount(e.target.value.replace(/[^0-9]/g, ''))}
+      />
+      {bankError && <div className="text-red-400 text-sm mb-2">{bankError}</div>}
+      <div className="flex gap-2 w-full">
+        <button
+          className="flex-1 px-4 py-2 rounded bg-blue-700 hover:bg-blue-800 font-semibold"
+          onClick={() => {
+            const amt = Number(bankAmount);
+            if (!amt || amt <= 0) {
+              setBankError('Enter a valid amount.');
+              return;
+            }
+            if (bankAction === 'deposit') {
+              if (wallet < amt) {
+                setBankError('Not enough in wallet.');
+                return;
+              }
+              setWallet(wallet - amt);
+              setBank(bank + amt);
+              setEventMsg(`Deposited $${amt.toLocaleString()} to bank.`);
+            } else {
+              if (bank < amt) {
+                setBankError('Not enough in bank.');
+                return;
+              }
+              setBank(bank - amt);
+              setWallet(wallet + amt);
+              setEventMsg(`Withdrew $${amt.toLocaleString()} from bank.`);
+            }
+            setShowBankModal(false);
+            setTimeout(() => setEventMsg(null), 3000);
+          }}
+        >Confirm</button>
+        <button
+          className="flex-1 px-4 py-2 rounded bg-gray-700 hover:bg-gray-800 font-semibold"
+          onClick={() => setShowBankModal(false)}
+        >Cancel</button>
+      </div>
+      <div className="flex flex-col w-full text-xs text-gray-400 mt-2">
+        <span>Wallet: ${wallet.toLocaleString()}</span>
+        <span>Bank: ${bank.toLocaleString()}</span>
+      </div>
+    </div>
+  </div>
+)}
+			{showCloudModal && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-md flex flex-col items-center gap-4 max-h-[90vh] overflow-y-auto">
+      <h3 className="text-lg font-bold mb-2">Cloud Storage Management</h3>
+      <div className="text-xs text-gray-400 mb-2">{Object.values(cloudStorage).reduce((a, b) => a + b, 0)}/{maxCloudStorage} used</div>
+      {cloudError && <div className="text-red-400 text-sm mb-2">{cloudError}</div>}
+      <div className="w-full flex flex-col gap-2">
+        <div className="font-semibold text-blue-200 mb-1">Inventory → Cloud</div>
+        {Object.entries(inventory).filter(([good, qty]) => qty > 0).length === 0 ? (
+          <div className="text-gray-400 text-sm mb-2">No goods in inventory to store.</div>
+        ) : (
+          Object.entries(inventory).filter(([good, qty]) => qty > 0).map(([good, qty]) => (
+            <div key={good} className="flex items-center gap-2 w-full">
+              <span className="w-24">{good}</span>
+              <span className="text-xs text-gray-400">Inv: {qty}</span>
+              <input
+                type="number"
+                min={1}
+                max={qty}
+                value={cloudTransferQty[good] || ''}
+                onChange={e => setCloudTransferQty(q => ({ ...q, [good]: Math.max(1, Math.min(Number(e.target.value) || 1, qty)) }))}
+                className="w-14 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center"
+              />
+              <button
+                className="px-2 py-1 bg-cyan-700 hover:bg-cyan-800 rounded text-xs"
+                onClick={() => {
+                  const amount = cloudTransferQty[good] || 1;
+                  const totalCloud = Object.values(cloudStorage).reduce((a, b) => a + b, 0);
+                  if (totalCloud + amount > maxCloudStorage) {
+                    setCloudError("Cloud storage is full.");
+                    return;
+                  }
+                  if (qty < amount) {
+                    setCloudError("Not enough in inventory.");
+                    return;
+                  }
+                  setInventory(inv => ({ ...inv, [good]: inv[good] - amount }));
+                  setCloudStorage(cs => ({ ...cs, [good]: (cs[good] || 0) + amount }));
+                  setCloudTransferQty(q => {
+                    const newQty = { ...q };
+                    delete newQty[good];
+                    return newQty;
+                  });
+                  setCloudError(null);
+                }}
+              >→ Cloud</button>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="w-full flex flex-col gap-2 mt-4">
+        <div className="font-semibold text-blue-200 mb-1">Cloud → Inventory</div>
+        {Object.entries(cloudStorage).filter(([good, qty]) => qty > 0).length === 0 ? (
+          <div className="text-gray-400 text-sm mb-2">No goods in cloud storage.</div>
+        ) : (
+          Object.entries(cloudStorage).filter(([good, qty]) => qty > 0).map(([good, qty]) => (
+            <div key={good} className="flex items-center gap-2 w-full">
+              <span className="w-24">{good}</span>
+              <span className="text-xs text-gray-400">Cloud: {qty}</span>
+              <input
+                type="number"
+                min={1}
+                max={qty}
+                value={cloudTransferQty[good + '_back'] || ''}
+                onChange={e => setCloudTransferQty(q => ({ ...q, [good + '_back']: Math.max(1, Math.min(Number(e.target.value) || 1, qty)) }))}
+                className="w-14 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center"
+              />
+              <button
+                className="px-2 py-1 bg-blue-700 hover:bg-blue-800 rounded text-xs"
+                onClick={() => {
+                  const amount = cloudTransferQty[good + '_back'] || 1;
+                  if (qty < amount) {
+                    setCloudError("Not enough in cloud storage.");
+                    return;
+                  }
+                  setCloudStorage(cs => ({ ...cs, [good]: cs[good] - amount }));
+                  setInventory(inv => ({ ...inv, [good]: (inv[good] || 0) + amount }));
+                  setCloudTransferQty(q => {
+                    const newQty = { ...q };
+                    delete newQty[good + '_back'];
+                    return newQty;
+                  });
+                  setCloudError(null);
+                }}
+              >← Inventory</button>
+            </div>
+          ))
+        )}
+      </div>
+      <button className="mt-4 px-4 py-2 rounded bg-gray-700 hover:bg-gray-800" onClick={() => setShowCloudModal(false)}>Close</button>
     </div>
   </div>
 )}
