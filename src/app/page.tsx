@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 
 const STARTING_CASH = 100000;
+const STARTING_DEBT = 100000;
 const STARTING_INFRA = "Small Cloud Server";
 
 const CITIES = [
@@ -448,7 +449,7 @@ export default function Home() {
 	const [bangaloreBonus, setBangaloreBonus] = useState(false);
 	const [ipoReady, setIpoReady] = useState(false);
 	// Add debt and cloudStorage state
-	const [debt, setDebt] = useState(0);
+	const [debt, setDebt] = useState(STARTING_DEBT);
 	const [cloudStorage, setCloudStorage] = useState<{ [good: string]: number }>({});
 	// Add state for wallet (on-hand cash) and bank balance
 	const [wallet, setWallet] = useState(STARTING_CASH);
@@ -546,8 +547,10 @@ export default function Home() {
 					<h2 className="text-xl font-semibold mb-2">Your Starting Assets</h2>
 					<ul className="text-base text-gray-200 list-disc list-inside">
 						<li>
-							💵{" "}
-							<b>${STARTING_CASH.toLocaleString()}</b> cash
+							💵 <b>${STARTING_CASH.toLocaleString()}</b> cash
+						</li>
+						<li>
+							💳 <b>${STARTING_DEBT.toLocaleString()}</b> debt
 						</li>
 						<li>
 							☁️ <b>{STARTING_INFRA}</b>
@@ -941,15 +944,15 @@ export default function Home() {
 									<li key={c.name} className="flex flex-col bg-gray-800 rounded p-3 border border-gray-700">
 										<div className="flex justify-between items-center mb-1">
 											<span className="font-semibold">{c.emoji} {c.name}</span>
-											<span className="text-green-300 font-bold">${(10000 + c.name.length * 1000).toLocaleString()}</span>
+											<span className="text-green-300 font-bold">${((10000 + c.name.length * 1000) / 2).toLocaleString()}</span>
 										</div>
 										<span className="text-gray-300 text-sm mb-1">{c.description}</span>
 										<button
 											className="mt-2 px-4 py-1 rounded bg-blue-700 hover:bg-blue-800 text-sm font-semibold disabled:opacity-50"
-											disabled={wallet < (10000 + c.name.length * 1000)}
+											disabled={wallet < ((10000 + c.name.length * 1000) / 2)}
 											// In the travel button handler, increment turn and apply automation income
 											onClick={() => {
-												setWallet(wallet - (10000 + c.name.length * 1000));
+												setWallet(wallet - ((10000 + c.name.length * 1000) / 2));
 												setCity(c.name);
 												setShowTravel(false);
 												setShowTrade(false); // Ensure market is closed so travel alert is visible
