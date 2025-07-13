@@ -3,7 +3,7 @@ import Image from "next/image";
 
 import { useState, useEffect } from "react";
 
-const STARTING_CASH = 10000000;
+const STARTING_CASH = 100000; // Start with $100,000
 const STARTING_DEBT = 100000;
 const STARTING_INFRA = null; // Remove Small Cloud Server
 
@@ -467,6 +467,15 @@ function getDateFromTurn(turn: number) {
   return `${monthNames[monthIndex]} ${year}`;
 }
 
+// Helper to get Tycoon Rank from score
+function getTycoonRank(score: number) {
+  if (score >= 50000) return "Tycoon";
+  if (score >= 30000) return "Architect";
+  if (score >= 10000) return "Senior Dev";
+  if (score >= 1000) return "Junior Dev";
+  return "Intern";
+}
+
 export default function Home() {
 	const [started, setStarted] = useState(false);
 	const [city, setCity] = useState<string | null>("San Francisco");
@@ -558,6 +567,21 @@ export default function Home() {
 	  // eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [prices, city]);
 
+	// Update Tycoon Index (score) on every turn based on net worth, reputation, and time (turns)
+	useEffect(() => {
+  let invValue = 0;
+  GOODS.forEach(g => {
+    invValue += (inventory[g.name] || 0) * prices[g.name];
+    invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+  });
+  const netWorth = wallet + bank + invValue;
+  // New scaling: score = Math.round(((netWorth + reputation * 1_000_000) / years) / 100_000)
+  // 1B + 10M (10 rep) in 10 years = 1,010,000,000 / 10 / 100,000 = 10,100
+  const years = Math.max(1, turn / 12);
+  setScore(Math.round(((netWorth + reputation * 1_000_000) / years) / 100_000));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [wallet, bank, inventory, cloudStorage, prices, reputation, turn]);
+
 	function handleCyberChoice(choice: 'fight' | 'pay' | 'ignore') {
 		if (!pendingCyber) return;
 		const roll = Math.random();
@@ -572,6 +596,7 @@ export default function Home() {
 			setAttackers(newAttackers);
 			if (newAttackers === 0) {
 				msg = `You repelled the ${cyberType} attack! All attackers neutralized.`;
+				setReputation(r => r + 5); // Gain reputation for fending off
 				resolved = true;
 			} else {
 				msg = `You used your ASICs and neutralized ${attackers - newAttackers} attackers. (${newAttackers} left)`;
@@ -937,6 +962,10 @@ export default function Home() {
 								<tr>
 									<td className="w-1/2 text-left whitespace-nowrap">📈 <b>Tycoon Index</b></td>
 									<td className="w-1/2 text-right">{Math.round(score).toLocaleString()}</td>
+								</tr>
+								<tr>
+									<td className="w-1/2 text-left whitespace-nowrap">🏅 <b>Rank</b></td>
+									<td className="w-1/2 text-right text-yellow-300">{getTycoonRank(score)}</td>
 								</tr>
 								<tr>
 									<td className="w-1/2 text-left whitespace-nowrap">🔧 <b>ASICs</b></td>
@@ -1423,6 +1452,7 @@ export default function Home() {
     <div className="bg-gray-900 rounded-lg p-8 shadow-lg w-full max-w-md flex flex-col items-center">
       <h2 className={`text-2xl font-bold mb-4 ${gameOver.win ? 'text-green-300' : 'text-red-300'}`}>{gameOver.win ? 'You Win!' : 'Game Over'}</h2>
       <p className="mb-6 text-center text-lg">{gameOver.reason}</p>
+      <p className="mb-4 text-center text-yellow-300 font-bold">Final Rank: {getTycoonRank(score)}</p>
       <button className="px-6 py-2 rounded bg-blue-700 hover:bg-blue-800 text-lg font-semibold" onClick={() => window.location.reload()}>Restart</button>
     </div>
   </div>
