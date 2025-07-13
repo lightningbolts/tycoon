@@ -1,7 +1,7 @@
 'use client';
 import Image from "next/image";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const STARTING_CASH = 100000;
 const STARTING_DEBT = 100000;
@@ -452,6 +452,18 @@ const UPGRADES = [
 	},
 ];
 
+// Helper to get year/month from turn
+function getDateFromTurn(turn: number) {
+  const startYear = 2020;
+  const monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  const monthIndex = (turn - 1) % 12;
+  const year = startYear + Math.floor((turn - 1) / 12);
+  return `${monthNames[monthIndex]} ${year}`;
+}
+
 export default function Home() {
 	const [started, setStarted] = useState(false);
 	const [city, setCity] = useState<string | null>("San Francisco");
@@ -489,7 +501,7 @@ export default function Home() {
 	const [score, setScore] = useState(0);
 	// Bank modal state
 	const [showBankModal, setShowBankModal] = useState(false);
-	const [bankAction, setBankAction] = useState<'deposit' | 'withdraw'>('deposit');
+	const [bankAction, setBankAction] = useState<'deposit' | 'withdraw' | 'paydebt'>('deposit');
 	const [bankAmount, setBankAmount] = useState('');
 	const [bankError, setBankError] = useState<string | null>(null);
 	const [maxCloudStorage, setMaxCloudStorage] = useState(1000);
@@ -512,6 +524,12 @@ export default function Home() {
 	const [cyberType, setCyberType] = useState<string | null>(null);
 	const [cyberRound, setCyberRound] = useState(1);
 	const [cyberMsg, setCyberMsg] = useState<string | null>(null);
+	// Server repair modal state
+	const [showRepairModal, setShowRepairModal] = useState(false);
+	const [repairCost, setRepairCost] = useState(0);
+	const [repairMax, setRepairMax] = useState(0);
+	const [repairAmount, setRepairAmount] = useState('');
+	const [repairError, setRepairError] = useState<string | null>(null);
 
 	function handleCyberChoice(choice: 'fight' | 'pay' | 'ignore') {
 		if (!pendingCyber) return;
@@ -634,6 +652,20 @@ export default function Home() {
 		}
 	}
 
+	// Net worth loss detection effect
+	useEffect(() => {
+		let invValue = 0;
+		GOODS.forEach(g => {
+			invValue += (inventory[g.name] || 0) * prices[g.name];
+			invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+		});
+		const netWorth = wallet + bank + invValue;
+		if (netWorth <= 0 && !gameOver) {
+			setGameOver({ win: false, reason: "You lost everything! Your net worth is $0. Game over." });
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [wallet, bank, inventory, cloudStorage, prices]);
+
 	if (!started) {
 		return (
 			<div className="flex flex-col items-center justify-center min-h-screen p-8 gap-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700 text-white">
@@ -728,7 +760,7 @@ export default function Home() {
 				<div className="flex flex-col sm:flex-row justify-between items-center gap-2 w-full">
 					<div className="flex flex-col gap-1">
 						<h2 className="text-2xl font-bold">{companyName || city}</h2>
-						<span className="text-gray-400 text-sm">Turn {turn}</span>
+						<span className="text-gray-400 text-sm">{getDateFromTurn(turn)}</span>
 					</div>
 					<div className="flex gap-6 text-base">
 						<span>📍 <b>{city}</b></span>
@@ -791,7 +823,7 @@ export default function Home() {
 						{/* Retire button if $1B+ */}
 						{(wallet + bank) >= 1_000_000_000 && !gameOver && (
 							<button
-								className="mt-4 px-6 py-2 rounded bg-green-700 hover:bg-green-800 text-lg font-semibold w-full"
+								className="mt-4 px-6 py-2 rounded-full bg-green-700 hover:bg-green-800 text-lg font-semibold w-full"
 								onClick={() => setGameOver({ win: true, reason: `You retired as a billionaire! Final Tycoon Index: ${Math.round(score).toLocaleString()}` })}
 							>
 								Retire
@@ -872,15 +904,13 @@ export default function Home() {
 									const netWorth = wallet + bank + invValue;
 									const minCost = Math.floor(netWorth * 0.005);
 									const maxCost = Math.floor(netWorth * 0.25);
-									const repairCost = Math.max(1, Math.floor(minCost + Math.random() * (maxCost - minCost)));
-									if (cash >= repairCost) {
-										setCash(cash - repairCost);
-										setServerHealth(100);
-										setEventMsg(`Server repaired! Paid $${repairCost.toLocaleString()}. Infrastructure is stable.`);
-									} else {
-										setEventMsg(`Not enough cash for server repair. Need $${repairCost.toLocaleString()}.`);
-									}
-									setTimeout(() => setEventMsg(null), 3000);
+									// Randomize the max repair offer for this visit (between minCost and maxCost)
+									const randomMax = Math.max(minCost, Math.floor(minCost + Math.random() * (maxCost - minCost + 1)));
+									setRepairCost(randomMax); // initial suggestion
+									setRepairMax(randomMax); // user can't pay more than this random max
+									setRepairAmount(String(randomMax));
+									setRepairError(null);
+									setShowRepairModal(true);
 								}}
 							>
 								🛠️ Server Repair (0.5-25% net worth)
@@ -988,11 +1018,8 @@ export default function Home() {
 													onClick={() => {
 														const qty = tradeQty[g.name] || 1;
 														const total = prices[g.name] * qty;
-														const totalInventory = Object.values(inventory).reduce((a, b) => a + b, 0);
 														if (wallet < total) {
 															setModal({ title: "Insufficient Funds", message: `You don't have enough money to buy ${qty} ${g.name}.` });
-														} else if (totalInventory + qty > maxInventory * GOODS.length) {
-															setModal({ title: "Total Inventory Full", message: `Your total inventory is full. Sell or store items to make space.` });
 														} else {
 															setWallet(wallet - total);
 															setInventory(inv => ({ ...inv, [g.name]: (inv[g.name] || 0) + qty }));
@@ -1003,14 +1030,15 @@ export default function Home() {
 											<td className="text-center">
 												<button
 													className="px-2 py-1 bg-gray-700 hover:bg-gray-800 rounded text-xs"
-													disabled={!(inventory[g.name] && inventory[g.name] >= (tradeQty[g.name] || 1))}
 													onClick={() => {
 														const qty = tradeQty[g.name] || 1;
-														if (inventory[g.name] && inventory[g.name] >= qty) {
-															const bonus = 1 + (security ? 0.5 : 0);
-															setWallet(wallet + Math.round(prices[g.name] * qty * bonus));
-															setInventory(inv => ({ ...inv, [g.name]: inv[g.name] - qty }));
+														if (!inventory[g.name] || inventory[g.name] < qty) {
+															setModal({ title: "Not Enough Inventory", message: `You don't have enough ${g.name} to sell (${qty} requested, ${inventory[g.name] || 0} available).` });
+															return;
 														}
+														const bonus = 1 + (security ? 0.5 : 0);
+														setWallet(wallet + Math.round(prices[g.name] * qty * bonus));
+														setInventory(inv => ({ ...inv, [g.name]: inv[g.name] - qty }));
 													}}
 												>Sell</button>
 											</td>
@@ -1096,6 +1124,11 @@ export default function Home() {
 											disabled={wallet < Math.round(((10000 + c.name.length * 1000) / 2) * travelDiscount)}
 											// In the travel button handler, increment turn and apply automation income
 											onClick={() => {
+												const totalInventory = Object.values(inventory).reduce((a, b) => a + b, 0);
+												if (totalInventory > maxInventory * GOODS.length) {
+													setModal({ title: "Inventory Overfilled", message: `You cannot travel with an overfilled inventory. Please move items to cloud storage or sell goods until your inventory is within the limit (${maxInventory * GOODS.length}).` });
+													return;
+												}
 												const travelCost = Math.round(((10000 + c.name.length * 1000) / 2) * travelDiscount);
 												setWallet(wallet - travelCost);
 												setCity(c.name);
@@ -1129,8 +1162,8 @@ export default function Home() {
 													setEventMsg(`Automation Suite: +$${bonus.toLocaleString()} (0.5% net worth)`);
 													setTimeout(() => setEventMsg(null), 3000);
 												}
-												// Random event (30% chance)
-												if (Math.random() < 0.3) {
+												// Random event (90% chance for testing)
+												if (Math.random() < 0.9) {
 													const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
 													if (event.type === "Economic") {
 														// Economic events: apply to all players
@@ -1147,7 +1180,7 @@ export default function Home() {
 														}
 													} else if (event.type === "Personal") {
 														// Personal events: apply to the player
-														if (event.text.includes('Cyberattack')) {
+														if (event.text.includes('Cyberattack') || Math.random() < 0.7) { // 70% chance for cyberattack
 															// Interactive cyberattack event
 															const attack = CYBERATTACKS[Math.floor(Math.random() * CYBERATTACKS.length)];
 															setCyberType(attack.type);
@@ -1204,7 +1237,7 @@ export default function Home() {
 			{showBankModal && (
   <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
     <div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center gap-4">
-      <h3 className="text-lg font-bold mb-2">Bank: {bankAction === 'deposit' ? 'Deposit' : 'Withdraw'}</h3>
+      <h3 className="text-lg font-bold mb-2">Bank: {bankAction === 'deposit' ? 'Deposit' : bankAction === 'withdraw' ? 'Withdraw' : 'Pay Debt'}</h3>
       <div className="flex gap-2 mb-2">
         <button
           className={`px-3 py-1 rounded ${bankAction === 'deposit' ? 'bg-green-700' : 'bg-gray-700'} text-white font-semibold`}
@@ -1214,6 +1247,10 @@ export default function Home() {
           className={`px-3 py-1 rounded ${bankAction === 'withdraw' ? 'bg-green-700' : 'bg-gray-700'} text-white font-semibold`}
           onClick={() => { setBankAction('withdraw'); setBankError(null); }}
         >Withdraw</button>
+        <button
+          className={`px-3 py-1 rounded ${bankAction === 'paydebt' ? 'bg-green-700' : 'bg-gray-700'} text-white font-semibold`}
+          onClick={() => { setBankAction('paydebt'); setBankError(null); }}
+        >Pay Debt</button>
       </div>
       <input
         type="number"
@@ -1241,7 +1278,7 @@ export default function Home() {
               setWallet(wallet - amt);
               setBank(bank + amt);
               setEventMsg(`Deposited $${amt.toLocaleString()} to bank.`);
-            } else {
+            } else if (bankAction === 'withdraw') {
               if (bank < amt) {
                 setBankError('Not enough in bank.');
                 return;
@@ -1249,6 +1286,18 @@ export default function Home() {
               setBank(bank - amt);
               setWallet(wallet + amt);
               setEventMsg(`Withdrew $${amt.toLocaleString()} from bank.`);
+            } else if (bankAction === 'paydebt') {
+              if (wallet < amt) {
+                setBankError('Not enough in wallet.');
+                return;
+              }
+              if (debt < amt) {
+                setBankError('You do not owe that much.');
+                return;
+              }
+              setWallet(wallet - amt);
+              setDebt(debt - amt);
+              setEventMsg(`Paid $${amt.toLocaleString()} to VC. Debt reduced.`);
             }
             setShowBankModal(false);
             setTimeout(() => setEventMsg(null), 3000);
@@ -1262,6 +1311,7 @@ export default function Home() {
       <div className="flex flex-col w-full text-xs text-gray-400 mt-2">
         <span>Wallet: ${wallet.toLocaleString()}</span>
         <span>Bank: ${bank.toLocaleString()}</span>
+        <span>Debt: ${debt.toLocaleString()}</span>
       </div>
     </div>
   </div>
@@ -1278,19 +1328,20 @@ export default function Home() {
           <div className="text-gray-400 text-sm mb-2">No goods in inventory to store.</div>
         ) : (
           Object.entries(inventory).filter(([good, qty]) => qty > 0).map(([good, qty]) => (
-            <div key={good} className="flex items-center gap-2 w-full">
+            <div key={good} className="flex items-center gap-2 w-full mb-2">
               <span className="w-24">{good}</span>
-              <span className="text-xs text-gray-400">Inv: {qty}</span>
+              <span className="text-xs text-gray-400 w-20">Inv: {qty}</span>
               <input
                 type="number"
                 min={1}
                 max={Math.min(qty, maxCloudStorage - Object.values(cloudStorage).reduce((a, b) => a + b, 0))}
                 value={cloudTransferQty[good] || ''}
                 onChange={e => setCloudTransferQty(q => ({ ...q, [good]: Math.max(1, Math.min(Number(e.target.value) || 1, qty, maxCloudStorage - Object.values(cloudStorage).reduce((a, b) => a + b, 0))) }))}
-                className="w-14 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center"
+                className="w-20 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center h-8"
               />
               <button
-                className="px-2 py-1 bg-cyan-700 hover:bg-cyan-800 rounded text-xs"
+                className="px-2 rounded bg-cyan-700 hover:bg-cyan-800 text-xs w-24 h-8 flex items-center justify-center"
+                style={{ minHeight: '2rem' }}
                 onClick={() => {
                   const amount = cloudTransferQty[good] || 1;
                   const totalCloud = Object.values(cloudStorage).reduce((a, b) => a + b, 0);
@@ -1322,19 +1373,20 @@ export default function Home() {
           <div className="text-gray-400 text-sm mb-2">No goods in cloud storage.</div>
         ) : (
           Object.entries(cloudStorage).filter(([good, qty]) => qty > 0).map(([good, qty]) => (
-            <div key={good} className="flex items-center gap-2 w-full">
+            <div key={good} className="flex items-center gap-2 w-full mb-2">
               <span className="w-24">{good}</span>
-              <span className="text-xs text-gray-400">Cloud: {qty}</span>
+              <span className="text-xs text-gray-400 w-20">Cloud: {qty}</span>
               <input
                 type="number"
                 min={1}
                 max={qty}
                 value={cloudTransferQty[good + '_back'] || ''}
                 onChange={e => setCloudTransferQty(q => ({ ...q, [good + '_back']: Math.max(1, Math.min(Number(e.target.value) || 1, qty)) }))}
-                className="w-14 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center"
+                className="w-20 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center h-8"
               />
               <button
-                className="px-2 py-1 bg-blue-700 hover:bg-blue-800 rounded text-xs"
+                className="px-2 rounded bg-blue-700 hover:bg-blue-800 text-xs w-24 h-8 flex items-center justify-center"
+                style={{ minHeight: '2rem' }}
                 onClick={() => {
                   const amount = cloudTransferQty[good + '_back'] || 1;
                   if (qty < amount) {
@@ -1414,6 +1466,74 @@ export default function Home() {
           });
           return (wallet + bank + invValue).toLocaleString();
         })()}</span>
+      </div>
+    </div>
+  </div>
+)}
+			{showRepairModal && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center gap-4">
+      <h3 className="text-lg font-bold mb-2">Bob from Tech Support</h3>
+      <p className="text-center text-base text-gray-200 mb-2">"Hey, I can fix your servers! Just tell me how much you're willing to pay (0.5% - 25% of your net worth). The more you pay, the more I can fix!"</p>
+      <div className="text-sm text-gray-400 mb-2">Max repair cost: <b>${repairMax.toLocaleString()}</b> | Your offer: </div>
+      <input
+        type="number"
+        min={1}
+        max={repairMax}
+        value={repairAmount}
+        onChange={e => setRepairAmount(e.target.value.replace(/[^0-9]/g, ''))}
+        className="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 text-white text-center mb-2"
+      />
+      {repairError && <div className="text-red-400 text-sm mb-2">{repairError}</div>}
+      <div className="flex gap-2 w-full">
+        <button
+          className="flex-1 px-4 py-2 rounded bg-blue-700 hover:bg-blue-800 font-semibold"
+          onClick={() => {
+            const amt = Number(repairAmount);
+            let invValue = 0;
+            GOODS.forEach(g => {
+              invValue += (inventory[g.name] || 0) * prices[g.name];
+              invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+            });
+            const netWorth = wallet + bank + invValue;
+            if (!amt || amt < 1) {
+              setRepairError('Enter a valid amount.');
+              return;
+            }
+            if (amt > wallet) {
+              setRepairError('Not enough in wallet.');
+              return;
+            }
+            if (amt > repairMax) {
+              setRepairError('That exceeds the max allowed for this repair.');
+              return;
+            }
+            // Proportion of max repair
+            const percent = Math.min(amt / repairMax, 1);
+            const healthRestored = Math.round((100 - serverHealth) * percent);
+            setWallet(wallet - amt);
+            setServerHealth(h => Math.min(100, h + healthRestored));
+            setEventMsg(`Bob fixed your servers for $${amt.toLocaleString()}! Server health restored by ${healthRestored}.`);
+            setShowRepairModal(false);
+            setTimeout(() => setEventMsg(null), 4000);
+          }}
+        >Pay Bob</button>
+        <button
+          className="flex-1 px-4 py-2 rounded bg-gray-700 hover:bg-gray-800 font-semibold"
+          onClick={() => setShowRepairModal(false)}
+        >Cancel</button>
+      </div>
+      <div className="flex flex-col w-full text-xs text-gray-400 mt-2">
+        <span>Wallet: ${wallet.toLocaleString()}</span>
+        <span>Net Worth: ${(() => {
+          let invValue = 0;
+          GOODS.forEach(g => {
+            invValue += (inventory[g.name] || 0) * prices[g.name];
+            invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+          });
+          return (wallet + bank + invValue).toLocaleString();
+        })()}</span>
+        <span>Server Health: {serverHealth}/100</span>
       </div>
     </div>
   </div>
