@@ -3,7 +3,7 @@ import Image from "next/image";
 
 import { useState, useEffect } from "react";
 
-const STARTING_CASH = 100000;
+const STARTING_CASH = 10000000;
 const STARTING_DEBT = 100000;
 const STARTING_INFRA = null; // Remove Small Cloud Server
 
@@ -175,7 +175,10 @@ const GOODS = [
 function getInitialPrices() {
 	const prices: { [good: string]: number } = {};
 	GOODS.forEach((g) => {
-		prices[g.name] = g.price;
+		// Start with a price between 80% and 120% of base
+		const min = Math.floor(g.price * 0.8);
+		const max = Math.ceil(g.price * 1.2);
+		prices[g.name] = Math.floor(min + Math.random() * (max - min + 1));
 	});
 	return prices;
 }
@@ -353,7 +356,7 @@ const CYBERATTACKS = [
 		type: "Zero-Click",
 		text: "Zero-click exploit! Hackers instantly breach your defenses.",
 		effect: (state: any) => {
-			// Lose all cash or a large amount of inventory
+			// Lose either all cash or a few inventory items, not both
 			return { ...state, cyberType: "Zero-Click" };
 		}
 	}
@@ -493,7 +496,10 @@ export default function Home() {
 	const [wallet, setWallet] = useState(STARTING_CASH);
 	const [bank, setBank] = useState(0);
 	// Add state for modal
-	const [modal, setModal] = useState<{ title: string; message: string } | null>(null);
+	const [modal, setModal] = useState<
+  | { title: string; message: string; onConfirm?: () => void; onCancel?: () => void }
+  | null
+>(null);
 	// Win/loss modal state
 	const [gameOver, setGameOver] = useState<{ win: boolean; reason: string } | null>(null);
 	// Add reputation and score state
@@ -530,12 +536,62 @@ export default function Home() {
 	const [repairMax, setRepairMax] = useState(0);
 	const [repairAmount, setRepairAmount] = useState('');
 	const [repairError, setRepairError] = useState<string | null>(null);
+	// Add ASIC state
+	const [asicCount, setAsicCount] = useState(1);
+	const [attackers, setAttackers] = useState<number | null>(null);
+	const [attackersBase, setAttackersBase] = useState(0);
+
+	// Track price history for analytics
+	const [priceHistory, setPriceHistory] = useState<{ [city: string]: { [good: string]: number[] } }>({});
+
+	// Update price history on price change or city change
+	useEffect(() => {
+	  if (!city) return;
+	  setPriceHistory(prev => {
+	    const cityHist = prev[city] || {};
+	    const updated: { [good: string]: number[] } = { ...cityHist };
+	    GOODS.forEach(g => {
+	      updated[g.name] = [...(cityHist[g.name] || []), prices[g.name]];
+	    });
+	    return { ...prev, [city]: updated };
+	  });
+	  // eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [prices, city]);
 
 	function handleCyberChoice(choice: 'fight' | 'pay' | 'ignore') {
 		if (!pendingCyber) return;
 		const roll = Math.random();
 		let resolved = false;
 		let msg = '';
+		// ASIC-based cyberbattle logic for all cyberattacks except Ransomware
+		if (cyberType && cyberType !== 'Ransomware' && attackers !== null && attackers > 0) {
+			// Each ASIC can neutralize 1-2 attackers per round
+			const asicsUsed = Math.min(asicCount, attackers);
+			const attackersNeutralized = Array.from({ length: asicsUsed }, () => 1 + Math.floor(Math.random() * 2)).reduce((a, b) => a + b, 0);
+			const newAttackers = Math.max(0, attackers - attackersNeutralized);
+			setAttackers(newAttackers);
+			if (newAttackers === 0) {
+				msg = `You repelled the ${cyberType} attack! All attackers neutralized.`;
+				resolved = true;
+			} else {
+				msg = `You used your ASICs and neutralized ${attackers - newAttackers} attackers. (${newAttackers} left)`;
+			}
+			setServerHealth(h => Math.max(0, h - 5));
+			setCyberMsg(msg);
+			if (resolved) {
+				setTimeout(() => {
+					setPendingCyber(null);
+					setCyberType(null);
+					setCyberMsg(null);
+					setCyberRound(1);
+				}, 3000);
+			} else {
+				setCyberRound(r => r + 1);
+				setPendingCyber({ defenseRoll: Math.random() });
+			}
+			return;
+		}
+		// Special case for Ransomware: pay or fight
 		if (cyberType === "Ransomware") {
 			if (choice === 'pay') {
 				const ransom = Math.round(wallet * 0.5);
@@ -556,7 +612,7 @@ export default function Home() {
 				msg = "You tried to disconnect, but the ransomware wiped your cash!";
 				resolved = true;
 			}
-			setServerHealth(h => Math.max(0, h - 10));
+			setServerHealth(h => Math.max(0, h - 5));
 		} else if (cyberType === "Malware") {
 			if (choice === 'fight') {
 				if (roll < 0.5) {
@@ -590,35 +646,70 @@ export default function Home() {
 				msg = `Malware corrupted your inventory! Lost: ${lost.join(", ") || "nothing"}.`;
 				resolved = true;
 			}
-			setServerHealth(h => Math.max(0, h - 15));
+			setServerHealth(h => Math.max(0, h - 7));
 		} else if (cyberType === "DDoS") {
+			if (serverHealth <= 0) {
+				setCyberMsg("Your servers have crashed from the DDoS attack! You must repair them before continuing.");
+				setTimeout(() => {
+					setPendingCyber(null);
+					setCyberType(null);
+					setCyberMsg(null);
+					setCyberRound(1);
+				}, 3500);
+				return;
+			}
 			if (choice === 'fight') {
 				if (roll < 0.5) {
-					msg = "You repelled the DDoS attack!";
-					resolved = true;
+					setCyberMsg("You repelled the DDoS attack!");
+					setTimeout(() => {
+						setPendingCyber(null);
+						setCyberType(null);
+						setCyberMsg(null);
+						setCyberRound(1);
+					}, 3000);
+					return;
 				} else {
-					const drop = 20 + Math.floor(Math.random() * 21);
+					const drop = 10 + Math.floor(Math.random() * 6);
 					setServerHealth(h => Math.max(0, h - drop));
-					msg = `DDoS attack! Server health dropped by ${drop}.`;
+					setCyberMsg(`DDoS attack! Server health dropped by ${drop}. (Attack continues!)`);
 				}
-			} else {
-				const drop = 20 + Math.floor(Math.random() * 21);
-				setServerHealth(h => Math.max(0, h - drop));
-				msg = `DDoS attack! Server health dropped by ${drop}.`;
+			} else if (choice === 'ignore') {
+				// Disconnect: 50% chance to end attack, otherwise lose some health
+				if (roll < 0.5) {
+					setCyberMsg("You disconnected and the DDoS attack ended!");
+					setTimeout(() => {
+						setPendingCyber(null);
+						setCyberType(null);
+						setCyberMsg(null);
+						setCyberRound(1);
+					}, 3000);
+					return;
+				} else {
+					const drop = 10 + Math.floor(Math.random() * 6);
+					setServerHealth(h => Math.max(0, h - drop));
+					setCyberMsg(`You tried to disconnect, but the attack continues! Server health dropped by ${drop}.`);
+				}
 			}
 		} else if (cyberType === "Zero-Click") {
+			// Lose either all cash or a few inventory items, not both
 			if (choice === 'fight') {
 				if (roll < 0.5) {
-					msg = "You blocked the zero-click exploit!";
-					resolved = true;
+					setCyberMsg("You blocked the zero-click exploit!");
+					setTimeout(() => {
+						setPendingCyber(null);
+						setCyberType(null);
+						setCyberMsg(null);
+						setCyberRound(1);
+					}, 3000);
+					return;
 				} else {
 					if (Math.random() < 0.5) {
 						setWallet(0);
-						msg = "Zero-click exploit! All your cash was stolen.";
+						setCyberMsg("Zero-click exploit! All your cash was stolen.");
 					} else {
 						let lost = [];
 						let newInv = { ...inventory };
-						for (let i = 0; i < 5; i++) {
+						for (let i = 0; i < 3; i++) {
 							const goods = Object.keys(newInv).filter(k => newInv[k] > 0);
 							if (goods.length === 0) break;
 							const pick = goods[Math.floor(Math.random() * goods.length)];
@@ -626,16 +717,28 @@ export default function Home() {
 							lost.push(pick);
 						}
 						setInventory(newInv);
-						msg = `Zero-click exploit! Lost: ${lost.join(", ") || "nothing"}.`;
+						setCyberMsg(`Zero-click exploit! Lost: ${lost.join(", ") || "nothing"}.`);
 					}
-					resolved = true;
 				}
 			} else {
-				setWallet(0);
-				msg = "Zero-click exploit! All your cash was stolen.";
-				resolved = true;
+				if (Math.random() < 0.5) {
+					setWallet(0);
+					setCyberMsg("Zero-click exploit! All your cash was stolen.");
+				} else {
+					let lost = [];
+					let newInv = { ...inventory };
+					for (let i = 0; i < 3; i++) {
+						const goods = Object.keys(newInv).filter(k => newInv[k] > 0);
+						if (goods.length === 0) break;
+						const pick = goods[Math.floor(Math.random() * goods.length)];
+						newInv[pick] = Math.max(0, newInv[pick] - 1);
+						lost.push(pick);
+					}
+					setInventory(newInv);
+					setCyberMsg(`Zero-click exploit! Lost: ${lost.join(", ") || "nothing"}.`);
+				}
 			}
-			setServerHealth(h => Math.max(0, h - 30));
+			setServerHealth(h => Math.max(0, h - 12));
 		}
 		if (resolved) {
 			setCyberMsg(msg);
@@ -652,8 +755,24 @@ export default function Home() {
 		}
 	}
 
+	// Define startCyberAttack inside Home so it's available
+	function startCyberAttack(type: string, turn: number) {
+	  // Each year = 12 turns, attackers increase by 10% per year
+	  const years = Math.floor((turn - 1) / 12);
+	  const base = 5 + Math.floor(Math.random() * 6); // 5-10 attackers base
+	  const scaled = Math.ceil(base * Math.pow(1.1, years));
+	  setAttackers(scaled);
+	  setAttackersBase(scaled);
+	  setCyberType(type);
+	  setPendingCyber({ defenseRoll: Math.random() });
+	  setCyberRound(1);
+	  setCyberMsg(null);
+	  setShowTrade(true);
+	}
+
 	// Net worth loss detection effect
 	useEffect(() => {
+		if (pendingCyber) return; // Don't check for game over during cyberattacks
 		let invValue = 0;
 		GOODS.forEach(g => {
 			invValue += (inventory[g.name] || 0) * prices[g.name];
@@ -664,7 +783,8 @@ export default function Home() {
 			setGameOver({ win: false, reason: "You lost everything! Your net worth is $0. Game over." });
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [wallet, bank, inventory, cloudStorage, prices]);
+		// Only include primitive values in the dependency array
+	}, [wallet, bank, debt, serverHealth, gameOver, pendingCyber]);
 
 	if (!started) {
 		return (
@@ -818,6 +938,10 @@ export default function Home() {
 									<td className="w-1/2 text-left whitespace-nowrap">📈 <b>Tycoon Index</b></td>
 									<td className="w-1/2 text-right">{Math.round(score).toLocaleString()}</td>
 								</tr>
+								<tr>
+									<td className="w-1/2 text-left whitespace-nowrap">🔧 <b>ASICs</b></td>
+									<td className="w-1/2 text-right text-cyan-300">{asicCount}</td>
+								</tr>
 							</tbody>
 						</table>
 						{/* Retire button if $1B+ */}
@@ -935,12 +1059,18 @@ export default function Home() {
 						</button>
 					</div>
 				</div>
-				{eventMsg && !showTrade && (
+				{/* Only show eventMsg alert if not in a cyberattack */}
+				{eventMsg && !showTrade && !pendingCyber && (
 					<div className="w-full max-w-2xl bg-yellow-900/80 text-yellow-200 rounded-lg p-4 shadow text-center font-semibold animate-pulse mb-4">
 						{eventMsg}
 					</div>
 				)}
-				{showTrade && (
+				{showTrade && serverHealth === 0 && (
+  <div className="w-full bg-red-900/90 text-red-100 rounded-lg p-6 shadow text-center font-bold mb-4">
+    Your servers are down! You cannot trade until you repair your infrastructure.
+  </div>
+)}
+				{showTrade && serverHealth > 0 && (
 					<div className="w-full bg-gray-800 rounded-lg p-4 shadow flex flex-col gap-4">
 						<h3 className="text-lg font-bold mb-2">Market</h3>
 						{/* Alerts above trading table */}
@@ -951,17 +1081,28 @@ export default function Home() {
 									<p className="text-lg text-center text-yellow-200 font-semibold mb-2">
 										{cyberMsg || CYBERATTACKS.find(a => a.type === cyberType)?.text || "A major cyberattack is underway!"}
 									</p>
-									{!cyberMsg && (
-										<div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
-											<button className="px-6 py-2 rounded bg-blue-700 hover:bg-blue-800 font-bold" onClick={() => handleCyberChoice('fight')}>
-												Fire Countermeasures
+									{attackersBase > 0 && (
+										<div className="w-full flex flex-col items-center mb-2">
+											<span className="text-base text-cyan-300 font-bold">ASIC Machines: {asicCount}</span>
+											<span className="text-base text-pink-300 font-bold">Attackers Remaining: {attackers === 0 ? 0 : attackers} / {attackersBase}</span>
+										</div>
+									)}
+									{/* Only show action buttons if the attack is ongoing and not resolved */}
+									{pendingCyber && attackers !== 0 && !cyberMsg?.includes('repelled') && !cyberMsg?.includes('ended') && !cyberMsg?.includes('crashed') && (
+										<div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+											<button
+												className="flex-1 min-w-[120px] px-4 py-2 rounded bg-blue-700 hover:bg-blue-800 font-bold text-base disabled:opacity-50"
+												onClick={() => handleCyberChoice('fight')}
+												disabled={asicCount === 0}
+											>
+												Use ASICs
 											</button>
 											{cyberType === 'Ransomware' && (
-												<button className="px-6 py-2 rounded bg-yellow-600 hover:bg-yellow-700 text-black font-bold" onClick={() => handleCyberChoice('pay')}>
+												<button className="flex-1 min-w-[120px] px-4 py-2 rounded bg-yellow-500 hover:bg-yellow-600 text-black font-bold text-base" onClick={() => handleCyberChoice('pay')}>
 													Pay Ransom
 												</button>
 											)}
-											<button className="px-6 py-2 rounded bg-gray-700 hover:bg-gray-800 font-bold" onClick={() => handleCyberChoice('ignore')}>
+											<button className="flex-1 min-w-[120px] px-4 py-2 rounded bg-gray-700 hover:bg-gray-800 font-bold text-base" onClick={() => handleCyberChoice('ignore')}>
 												Try to Disconnect
 											</button>
 										</div>
@@ -973,7 +1114,8 @@ export default function Home() {
 								</div>
 							</div>
 						)}
-						{eventMsg && showTrade && !eventMsg.startsWith('Arrived in') && (
+						{/* In the market/trade section, only show eventMsg if not in a cyberattack */}
+						{eventMsg && showTrade && !eventMsg.startsWith('Arrived in') && !pendingCyber && (
 							<div className="w-full bg-yellow-900/80 text-yellow-200 rounded-lg p-4 shadow text-center font-semibold animate-pulse mb-4">
 								{eventMsg}
 							</div>
@@ -1095,6 +1237,12 @@ export default function Home() {
 												if (newState.ipoReady !== undefined) setIpoReady(newState.ipoReady);
 												if (newState.maxCloudStorage !== undefined) setMaxCloudStorage(newState.maxCloudStorage);
 												if (newState.travelDiscount !== undefined) setTravelDiscount(newState.travelDiscount);
+												// After applying upgrade effects, handle Travel Network and Cloud Storage Expansion upgrades
+												if (u.name === "Travel Network") setTravelDiscount(0.8);
+												if (u.name === "Cloud Storage Expansion") setMaxCloudStorage(m => m + 1000);
+												if (u.name === "Shenzhen Supply Chain") setShenzhenBonus(true);
+												if (u.name === "Bangalore Dev Hub") setBangaloreBonus(true);
+												if (u.name === "IPO Preparation") setIpoReady(true);
 												setShowUpgrade(false);
 											}}
 										>
@@ -1135,9 +1283,78 @@ export default function Home() {
 												setShowTravel(false);
 												setShowTrade(false); // Ensure market is closed so travel alert is visible
 												setEventMsg(null); // Clear any previous event
+												// --- CYBERATTACK EVENT (while traveling) ---
+												if (Math.random() < 0.3) {
+													const attack = CYBERATTACKS[Math.floor(Math.random() * CYBERATTACKS.length)];
+													startCyberAttack(attack.type, turn);
+													// Do NOT setEventMsg for cyberattacks
+												}
 												setTimeout(() => {
 													setEventMsg(`Arrived in ${c.name}!`);
 													setTimeout(() => setEventMsg(null), 3000);
+													if (Math.random() < (0.15 + Math.random() * 0.10)) {
+														// Offer to buy an ASIC at a random price (1-50% of wallet)
+														const asicPrice = Math.max(1, Math.floor(wallet * (0.01 + Math.random() * 0.49)));
+														setModal({
+															title: 'ASIC Machine Offer',
+															message: `A vendor offers you an ASIC machine for $${asicPrice.toLocaleString()}. Do you want to buy it?`,
+															onConfirm: () => {
+																if (wallet >= asicPrice) {
+																	setWallet(wallet - asicPrice);
+																	setAsicCount(c => c + 1);
+																	setEventMsg('You bought an ASIC machine!');
+																	setTimeout(() => setEventMsg(null), 3000);
+																} else {
+																	setEventMsg('Not enough funds to buy the ASIC machine.');
+																	setTimeout(() => setEventMsg(null), 3000);
+																}
+																setModal(null);
+															},
+															onCancel: () => setModal(null)
+														});
+													}
+													// --- MARKET/TECH EVENT (on arrival) ---
+													if (Math.random() < 0.9) {
+														const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+														if (event.type === "Economic") {
+															setPrices((prev) => {
+																const newPrices = { ...prev };
+																if (event.effect) {
+																	const result = event.effect({ prices: newPrices });
+																	// If the effect returns a new prices object, use it
+																	if (result && result.prices) return result.prices;
+																}
+																return newPrices;
+															});
+															setEventMsg(event.text);
+															setTimeout(() => setEventMsg(null), 5000);
+														} else if (event.type === "Tech") {
+															setEventMsg(event.text);
+															setTimeout(() => setEventMsg(null), 5000);
+															setPrices((prev) => {
+																const newPrices = { ...prev };
+																if (event.effect) {
+																	const result = event.effect({ prices: newPrices });
+																	if (result && result.prices) return result.prices;
+																}
+																return newPrices;
+															});
+														} else if (event.type === "Personal") {
+															setEventMsg(event.text);
+															const effect = event.effect;
+															if (effect) {
+																effect({
+																	cash,
+																	inventory,
+																	prices,
+																	setCash,
+																	setInventory,
+																	setPrices,
+																});
+															}
+															setTimeout(() => setEventMsg(null), 5000);
+														}
+													}
 												}, 100);
 												setTurn((t) => t + 1);
 												// Compound debt and bank interest
@@ -1162,47 +1379,6 @@ export default function Home() {
 													setEventMsg(`Automation Suite: +$${bonus.toLocaleString()} (0.5% net worth)`);
 													setTimeout(() => setEventMsg(null), 3000);
 												}
-												// Random event (90% chance for testing)
-												if (Math.random() < 0.9) {
-													const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-													if (event.type === "Economic") {
-														// Economic events: apply to all players
-														setPrices((prev) => {
-															const newPrices = { ...prev };
-															if (event.effect) event.effect({ prices: newPrices });
-															return newPrices;
-														});
-													} else if (event.type === "Tech") {
-														// Tech events: apply based on city or randomly
-														if (city === "San Francisco" || Math.random() < 0.5) {
-															setEventMsg(event.text);
-															setTimeout(() => setEventMsg(null), 5000);
-														}
-													} else if (event.type === "Personal") {
-														// Personal events: apply to the player
-														if (event.text.includes('Cyberattack') || Math.random() < 0.7) { // 70% chance for cyberattack
-															// Interactive cyberattack event
-															const attack = CYBERATTACKS[Math.floor(Math.random() * CYBERATTACKS.length)];
-															setCyberType(attack.type);
-															setPendingCyber({ defenseRoll: Math.random() });
-															setShowTrade(true); // Open trade screen to show cyberattack modal
-														} else {
-															setEventMsg(event.text);
-															const effect = event.effect;
-															if (effect) {
-																effect({
-																	cash,
-																	inventory,
-																	prices,
-																	setCash,
-																	setInventory,
-																	setPrices,
-																});
-															}
-															setTimeout(() => setEventMsg(null), 5000);
-														}
-													}
-												}
 											}}
 										>
 											Travel
@@ -1217,14 +1393,31 @@ export default function Home() {
 			</main>
 			{/* Modal component moved here so it always renders above everything */}
 			{modal && (
-			  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-				<div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center">
-				  <h3 className="text-lg font-bold mb-2">{modal.title}</h3>
-				  <p className="mb-4 text-center">{modal.message}</p>
-				  <button className="px-4 py-2 rounded bg-blue-700 hover:bg-blue-800" onClick={() => setModal(null)}>OK</button>
-				</div>
-			  </div>
-			)}
+  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+    <div className="bg-gray-900 rounded-lg p-8 shadow-lg w-full max-w-md flex flex-col items-center gap-6">
+      <h2 className="text-2xl font-bold text-blue-200 mb-2">{modal.title}</h2>
+      <p className="text-lg text-center text-yellow-200 font-semibold mb-2">{modal.message}</p>
+      {(modal.onConfirm || modal.onCancel) ? (
+        <div className="flex flex-row gap-4 w-full justify-center mt-2">
+          {modal.onConfirm && (
+            <button className="flex-1 min-w-[120px] px-4 py-2 rounded bg-green-700 hover:bg-green-800 font-bold text-base" onClick={modal.onConfirm}>
+              Confirm
+            </button>
+          )}
+          {modal.onCancel && (
+            <button className="flex-1 min-w-[120px] px-4 py-2 rounded bg-gray-700 hover:bg-gray-800 font-bold text-base" onClick={modal.onCancel}>
+              Cancel
+            </button>
+          )}
+        </div>
+      ) : (
+        <button className="mt-4 px-6 py-2 rounded bg-blue-700 hover:bg-blue-800 font-bold text-base" onClick={() => setModal(null)}>
+          OK
+        </button>
+      )}
+    </div>
+  </div>
+)}
 			{gameOver && (
   <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
     <div className="bg-gray-900 rounded-lg p-8 shadow-lg w-full max-w-md flex flex-col items-center">
@@ -1337,7 +1530,7 @@ export default function Home() {
                 max={Math.min(qty, maxCloudStorage - Object.values(cloudStorage).reduce((a, b) => a + b, 0))}
                 value={cloudTransferQty[good] || ''}
                 onChange={e => setCloudTransferQty(q => ({ ...q, [good]: Math.max(1, Math.min(Number(e.target.value) || 1, qty, maxCloudStorage - Object.values(cloudStorage).reduce((a, b) => a + b, 0))) }))}
-                className="w-20 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center h-8"
+                               className="w-20 px-1 py-0.5 rounded bg-gray-800 border border-gray-700 text-white text-center h-8"
               />
               <button
                 className="px-2 rounded bg-cyan-700 hover:bg-cyan-800 text-xs w-24 h-8 flex items-center justify-center"
@@ -1471,10 +1664,10 @@ export default function Home() {
   </div>
 )}
 			{showRepairModal && (
-  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+   <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
     <div className="bg-gray-900 rounded-lg p-6 shadow-lg w-full max-w-xs flex flex-col items-center gap-4">
       <h3 className="text-lg font-bold mb-2">Bob from Tech Support</h3>
-      <p className="text-center text-base text-gray-200 mb-2">"Hey, I can fix your servers! Just tell me how much you're willing to pay (0.5% - 25% of your net worth). The more you pay, the more I can fix!"</p>
+      <p className="text-center text-base text-gray-200 mb-2">"Hey, I can fix your servers! Just tell me how much you're willing to pay. The more I can fix!"</p>
       <div className="text-sm text-gray-400 mb-2">Max repair cost: <b>${repairMax.toLocaleString()}</b> | Your offer: </div>
       <input
         type="number"
@@ -1535,6 +1728,53 @@ export default function Home() {
         })()}</span>
         <span>Server Health: {serverHealth}/100</span>
       </div>
+    </div>
+  </div>
+)}
+			{/* Show price trends and market forecasting if analytics is unlocked */}
+			{analytics && (
+  <div className="w-full max-w-2xl bg-blue-900/80 text-blue-200 rounded-lg p-4 shadow text-center font-semibold mb-4">
+    <h3 className="text-lg font-bold mb-2">Market Forecast</h3>
+    <div className="flex flex-wrap gap-4 justify-center">
+      {GOODS.map(g => (
+        <div key={g.name} className="flex flex-col items-center bg-gray-800/80 rounded p-2 min-w-[180px]">
+          <span className="font-bold">{g.emoji} {g.name}</span>
+          <span className="text-sm">Current: ${prices[g.name].toLocaleString()}</span>
+          {/* Simple forecast: show if price is likely to rise/fall based on random chance or last price */}
+          <span className="text-xs mt-1">
+            {(() => {
+              const base = g.price;
+              if (prices[g.name] < base * 0.9) return <span className="text-green-300">Likely to Rise</span>;
+              if (prices[g.name] > base * 1.1) return <span className="text-red-300">Likely to Fall</span>;
+              return <span className="text-yellow-200">Stable</span>;
+            })()}
+          </span>
+          {/* Price history graph for this good in all cities */}
+          <div className="w-full mt-2">
+            {Object.entries(priceHistory).map(([cityName, cityHist]) => (
+              <div key={cityName} className="mb-1">
+                <span className="text-xs text-blue-300">{cityName}</span>
+                <svg width="120" height="32" viewBox="0 0 120 32" className="block">
+                  {cityHist[g.name] && cityHist[g.name].length > 1 && (
+                    <polyline
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="2"
+                      points={cityHist[g.name].map((p, i, arr) => {
+                        const min = Math.min(...arr);
+                        const max = Math.max(...arr);
+                        const y = max === min ? 16 : 28 - ((p - min) / (max - min)) * 24;
+                        const x = (i / (arr.length - 1)) * 110 + 5;
+                        return `${x},${y}`;
+                      }).join(' ')}
+                    />
+                  )}
+                </svg>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   </div>
 )}
