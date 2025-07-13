@@ -453,6 +453,16 @@ const UPGRADES = [
 		city: null,
 		effect: (state: any) => ({ ...state, maxCloudStorage: state.maxCloudStorage + 1000 }),
 	},
+	{
+		name: "Cloud Storage Booster",
+		cost: 100000000,
+		desc: "Add 1000 to cloud storage (repeatable)",
+		benefit: "+1000 cloud storage (can buy unlimited times)",
+		requires: [],
+		city: null,
+		repeatable: true,
+		effect: (state: any) => ({ ...state, maxCloudStorage: state.maxCloudStorage + 1000 }),
+	},
 ];
 
 // Helper to get year/month from turn
@@ -491,7 +501,7 @@ export default function Home() {
 	const [showUpgrade, setShowUpgrade] = useState(false);
 	const [upgrades, setUpgrades] = useState<string[]>([]);
 	const [security, setSecurity] = useState(false);
-	const [maxInventory, setMaxInventory] = useState(5);
+	const [maxInventory, setMaxInventory] = useState(50);
 	const [showTravel, setShowTravel] = useState(false);
 	const [analytics, setAnalytics] = useState(false);
 	const [automation, setAutomation] = useState(false);
@@ -913,7 +923,7 @@ export default function Home() {
 				</div>
 				<div className="flex flex-col sm:flex-row gap-4 w-full">
 					<div className="w-full max-w-xs bg-gray-900/80 rounded-lg p-3 shadow flex flex-col gap-1">
-						<h4 className="font-semibold mb-1">Inventory <span className="text-xs text-gray-400">({Object.values(inventory).reduce((a, b) => a + b, 0)}/{maxInventory * GOODS.length} total)</span></h4>
+						<h4 className="font-semibold mb-1">Inventory <span className="text-xs text-gray-400">({Object.values(inventory).reduce((a, b) => a + b, 0)}/{maxInventory} total)</span></h4>
 						<table className="w-full text-sm table-fixed">
 							<tbody>
 								{GOODS.map(g => (
@@ -1226,7 +1236,7 @@ export default function Home() {
 						<div className="bg-gray-900 rounded-lg p-8 shadow-lg w-full max-w-md flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
 							<h3 className="text-xl font-bold mb-2">Upgrades</h3>
 							<ul className="flex flex-col gap-3">
-								{UPGRADES.filter(u => (!u.city || u.city === city) && u.requires.every(r => upgrades.includes(r))).map((u) => (
+								{UPGRADES.filter(u => (!u.city || u.city === city) && u.requires.every(r => upgrades.includes(r) || u.repeatable)).map((u) => (
 									<li key={u.name} className="flex flex-col bg-gray-800 rounded p-3 border border-gray-700">
 										<div className="flex justify-between items-center mb-1">
 											<span className="font-semibold">{u.name}</span>
@@ -1236,11 +1246,10 @@ export default function Home() {
 										<span className="text-yellow-300 text-xs">{u.benefit}</span>
 										<button
 											className="mt-2 px-4 py-1 rounded bg-blue-700 hover:bg-blue-800 text-sm font-semibold disabled:opacity-50"
-											disabled={wallet < u.cost || upgrades.includes(u.name)}
-											// In the upgrade purchase handler, set all upgrade effect states
+											disabled={wallet < u.cost || (!u.repeatable && upgrades.includes(u.name))}
 											onClick={() => {
 												setWallet(wallet - u.cost);
-												setUpgrades((prev) => [...prev, u.name]);
+												if (!u.repeatable) setUpgrades((prev) => [...prev, u.name]);
 												const state = {
 													infra,
 													security,
@@ -1251,6 +1260,7 @@ export default function Home() {
 													bangaloreBonus,
 													ipoReady,
 													travelDiscount,
+													maxCloudStorage,
 													...upgrades.reduce((acc, name) => {
 														const upg = UPGRADES.find(up => up.name === name);
 														return upg ? { ...acc, ...upg.effect(acc) } : acc;
@@ -1266,16 +1276,10 @@ export default function Home() {
 												if (newState.ipoReady !== undefined) setIpoReady(newState.ipoReady);
 												if (newState.maxCloudStorage !== undefined) setMaxCloudStorage(newState.maxCloudStorage);
 												if (newState.travelDiscount !== undefined) setTravelDiscount(newState.travelDiscount);
-												// After applying upgrade effects, handle Travel Network and Cloud Storage Expansion upgrades
-												if (u.name === "Travel Network") setTravelDiscount(0.8);
-												if (u.name === "Cloud Storage Expansion") setMaxCloudStorage(m => m + 1000);
-												if (u.name === "Shenzhen Supply Chain") setShenzhenBonus(true);
-												if (u.name === "Bangalore Dev Hub") setBangaloreBonus(true);
-												if (u.name === "IPO Preparation") setIpoReady(true);
 												setShowUpgrade(false);
 											}}
 										>
-											{upgrades.includes(u.name) ? "Purchased" : "Buy"}
+											Buy
 										</button>
 									</li>
 								))}
@@ -1302,8 +1306,8 @@ export default function Home() {
 											// In the travel button handler, increment turn and apply automation income
 											onClick={() => {
 												const totalInventory = Object.values(inventory).reduce((a, b) => a + b, 0);
-												if (totalInventory > maxInventory * GOODS.length) {
-													setModal({ title: "Inventory Overfilled", message: `You cannot travel with an overfilled inventory. Please move items to cloud storage or sell goods until your inventory is within the limit (${maxInventory * GOODS.length}).` });
+												if (totalInventory > maxInventory) {
+													setModal({ title: "Inventory Overfilled", message: `You cannot travel with an overfilled inventory. Please move items to cloud storage or sell goods until your inventory is within the limit (${maxInventory}).` });
 													return;
 												}
 												const travelCost = Math.round(((10000 + c.name.length * 1000) / 2) * travelDiscount);
@@ -1321,26 +1325,31 @@ export default function Home() {
 												setTimeout(() => {
 													setEventMsg(`Arrived in ${c.name}!`);
 													setTimeout(() => setEventMsg(null), 3000);
-													if (Math.random() < (0.15 + Math.random() * 0.10)) {
-														// Offer to buy an ASIC at a random price (1-50% of wallet)
-														const asicPrice = Math.max(1, Math.floor(wallet * (0.01 + Math.random() * 0.49)));
+													// In the travel button handler, add 15-25% chance to offer inventory expansion for 1-50% of wallet
+													if (Math.random() < 0.15 + Math.random() * 0.10) {
+														const invPrice = Math.max(1, Math.floor(wallet * (0.01 + Math.random() * 0.49)));
 														setModal({
-															title: 'ASIC Machine Offer',
-															message: `A vendor offers you an ASIC machine for $${asicPrice.toLocaleString()}. Do you want to buy it?`,
+															title: 'Warehouse Expansion Offer',
+															message: `A warehouse manager offers to expand your inventory by 50 for $${invPrice.toLocaleString()}. Do you want to buy it?`,
 															onConfirm: () => {
-																if (wallet >= asicPrice) {
-																	setWallet(wallet - asicPrice);
-																	setAsicCount(c => c + 1);
-																	setEventMsg('You bought an ASIC machine!');
+																if (wallet >= invPrice) {
+																	setWallet(wallet - invPrice);
+																	setMaxInventory(m => m + 50);
+																	setEventMsg('You expanded your inventory by 50!');
 																	setTimeout(() => setEventMsg(null), 3000);
 																} else {
-																	setEventMsg('Not enough funds to buy the ASIC machine.');
+																	setEventMsg('Not enough funds to expand inventory.');
 																	setTimeout(() => setEventMsg(null), 3000);
 																}
 																setModal(null);
 															},
 															onCancel: () => setModal(null)
 														});
+													}
+													if (Math.random() < 0.15 + Math.random() * 0.10) {
+														setMaxInventory(m => m + 50);
+														setEventMsg('You found a warehouse! Inventory space increased by 50.');
+														setTimeout(() => setEventMsg(null), 3000);
 													}
 													// --- MARKET/TECH EVENT (on arrival) ---
 													if (Math.random() < 0.9) {
@@ -1493,6 +1502,7 @@ export default function Home() {
               setBankError('Enter a valid amount.');
               return;
             }
+           
             if (bankAction === 'deposit') {
               if (wallet < amt) {
                 setBankError('Not enough in wallet.');
