@@ -1,3 +1,58 @@
+# Tycoon!
+
+Become a tech mogul in this simulation game. Build your corporation, manage resources, and dominate the market!
+
+## Features
+- Trade futuristic commodities across global cities
+- Fend off cyberattacks and manage server health
+- Upgrade your company with tech, analytics, and automation
+- Compete for the highest Tycoon Index and rank
+- Dynamic events, market booms, and tech disruptions
+- Cloud storage, inventory management, and debt system
+- Beautiful, modern UI with analytics and market forecasting
+
+## Getting Started
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+2. **Run the development server:**
+   ```bash
+   npm run dev
+   ```
+3. **Open your browser:**
+   Visit [http://localhost:3000](http://localhost:3000)
+
+## Gameplay
+- Start with limited cash, debt, and inventory.
+- Buy and sell goods in different cities to maximize profit.
+- Watch out for cyberattacks and random events.
+- Upgrade your company to unlock new features and advantages.
+- Retire as a billionaire or reach the highest Tycoon Index for the best rank!
+
+## Upgrades
+- **Cloud Storage**: Store more goods offsite.
+- **Security Suite**: Reduce cyberattack losses.
+- **Analytics**: Unlock market forecasting and price history graphs.
+- **Automation**: Earn passive income each turn.
+- **Travel Network**: Reduce travel costs.
+- **Cloud Storage Booster**: Add +1000 cloud storage (repeatable).
+
+## Ranks
+- Intern: 0–999
+- Junior Dev: 1,000–9,999
+- Senior Dev: 10,000–29,999
+- Architect: 30,000–49,999
+- Tycoon: 50,000+
+
+## License
+MIT
+
+---
+
+Made with ❤️ using Next.js, React, and Vercel Analytics.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
