@@ -1058,20 +1058,8 @@ export default function Home() {
 								className="px-4 py-2 rounded bg-red-700 hover:bg-red-800 text-white font-semibold disabled:opacity-50"
 								disabled={serverHealth === 100}
 								onClick={() => {
-									// Server Repair: cost 0.5-25% of net worth, random in range
-									let invValue = 0;
-									GOODS.forEach(g => {
-										invValue += (inventory[g.name] || 0) * prices[g.name];
-										invValue += (cloudStorage[g.name] || 0) * prices[g.name];
-									});
-									const netWorth = wallet + bank + invValue;
-									const minCost = Math.floor(netWorth * 0.005);
-									const maxCost = Math.floor(netWorth * 0.25);
-									// Randomize the max repair offer for this visit (between minCost and maxCost)
-									const randomMax = Math.max(minCost, Math.floor(minCost + Math.random() * (maxCost - minCost + 1)));
-									setRepairCost(randomMax); // initial suggestion
-									setRepairMax(randomMax); // user can't pay more than this random max
-									setRepairAmount(String(randomMax));
+									// Server Repair: cost is now pre-calculated on arrival
+									setRepairAmount(String(repairMax));
 									setRepairError(null);
 									setShowRepairModal(true);
 								}}
@@ -1324,6 +1312,22 @@ export default function Home() {
 												}
 												setTimeout(() => {
 													setEventMsg(`Arrived in ${c.name}!`);
+
+													// --- RECALCULATE REPAIR COST ON ARRIVAL ---
+													let invValue = 0;
+													GOODS.forEach(g => {
+														invValue += (inventory[g.name] || 0) * prices[g.name];
+														invValue += (cloudStorage[g.name] || 0) * prices[g.name];
+													});
+													const netWorth = wallet + bank + invValue;
+													const minCost = Math.floor(netWorth * 0.005);
+													const maxCost = Math.floor(netWorth * 0.25);
+													const randomMax = Math.max(1, Math.floor(minCost + Math.random() * (maxCost - minCost + 1)));
+													setRepairMax(randomMax);
+													setRepairCost(randomMax);
+													setRepairAmount(String(randomMax));
+													// --- END REPAIR COST CALCULATION ---
+
 													setTimeout(() => setEventMsg(null), 3000);
 													// In the travel button handler, add 15-25% chance to offer inventory expansion for 1-50% of wallet
 													if (Math.random() < 0.15 + Math.random() * 0.10) {
@@ -1504,7 +1508,7 @@ export default function Home() {
             }
            
             if (bankAction === 'deposit') {
-              if (wallet < amt) {
+              if ( wallet < amt) {
                 setBankError('Not enough in wallet.');
                 return;
               }
